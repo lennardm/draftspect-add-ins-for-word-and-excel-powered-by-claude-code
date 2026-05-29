@@ -598,7 +598,7 @@ const USE_OPENROUTER = !!OPENROUTER_KEY;
 const OPENROUTER_MODEL_SLUGS = {
   haiku: process.env.OPENROUTER_MODEL_HAIKU?.trim() || "anthropic/claude-haiku-4.5",
   sonnet: process.env.OPENROUTER_MODEL_SONNET?.trim() || "anthropic/claude-sonnet-4.6",
-  opus: process.env.OPENROUTER_MODEL_OPUS?.trim() || "anthropic/claude-opus-4.7",
+  opus: process.env.OPENROUTER_MODEL_OPUS?.trim() || "anthropic/claude-opus-4.8",
 };
 
 // Env injected into the SDK's spawned Claude Code process when the toggle is
