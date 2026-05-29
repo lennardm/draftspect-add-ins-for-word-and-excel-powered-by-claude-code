@@ -449,7 +449,9 @@ body {
   font-weight: 600;
   font-size: 1em;
 }
-.msg.assistant.md-rendered h1 { font-size: 1.1em; }
+.msg.assistant.md-rendered h1 {
+  font-size: 1.1em;
+}
 .msg.assistant.md-rendered ul,
 .msg.assistant.md-rendered ol {
   margin: 0 0 8px 0;
@@ -1117,4 +1119,71 @@ body {
 }
 .path-row input[type="text"] {
   flex: 1 1 100%;
+}
+
+/* ---- Plan panel (TodoWrite checklist) -------------------------------------
+   Pinned just above the composer. Rendered outside #messages, so it is never
+   hidden by the "Show diagnostics" toggle. Updated in place on each TodoWrite
+   (the tool always sends the whole list). */
+.plan-panel {
+  border-top: 1px solid #eee;
+  background: #f7f7f7;
+  max-height: 38vh;
+  overflow-y: auto;
+  font-size: 12px;
+}
+.plan-panel.all-done {
+  opacity: 0.6;
+}
+.plan-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  padding: 6px 10px;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+}
+.plan-title {
+  font-weight: 600;
+}
+.plan-count {
+  color: #666;
+}
+.plan-caret {
+  margin-left: auto;
+  transition: transform 0.15s ease;
+}
+.plan-panel.collapsed .plan-caret {
+  transform: rotate(-90deg);
+}
+.plan-panel.collapsed .plan-items {
+  display: none;
+}
+.plan-items {
+  list-style: none;
+  margin: 0;
+  padding: 0 10px 8px;
+}
+.plan-item {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 2px 0;
+}
+.plan-glyph {
+  flex: none;
+  width: 1em;
+  text-align: center;
+}
+.plan-item.completed .plan-label {
+  text-decoration: line-through;
+  color: #888;
+}
+.plan-item.in_progress .plan-label {
+  font-weight: 600;
 }
