@@ -56,7 +56,8 @@ export function todoProgress(todos) {
 }
 
 // The label to show for an item: the present-continuous activeForm while it is
-// in progress, otherwise its content.
+// in progress, otherwise its content. Accepts a normalized todo or a raw SDK
+// todo — the fallbacks keep it safe if activeForm is missing on raw input.
 export function todoLabel(todo) {
   if (!todo || typeof todo !== "object") return "";
   return todo.status === "in_progress" ? todo.activeForm || todo.content || "" : todo.content || "";

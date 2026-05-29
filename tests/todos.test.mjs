@@ -16,6 +16,7 @@ test("isTodoWrite matches only the planning tool", () => {
   assert.equal(isTodoWrite("TodoWrite"), true);
   assert.equal(isTodoWrite("Read"), false);
   assert.equal(isTodoWrite(undefined), false);
+  assert.equal(isTodoWrite(null), false);
 });
 
 test("normalizeTodos keeps valid items and fills activeForm", () => {
@@ -66,6 +67,7 @@ test("coalesceTodos returns null when no TodoWrite event exists", () => {
 
 test("coalesceTodos picks the LAST TodoWrite, ignoring others", () => {
   const out = coalesceTodos([
+    null,
     { kind: "tool", name: "TodoWrite", input: { todos: [{ content: "A", status: "pending" }] } },
     { kind: "assistant", text: "working" },
     {
@@ -97,6 +99,7 @@ test("coalesceTodos returns [] when the last TodoWrite emptied the list", () => 
 
 test("todoProgress counts completed vs total", () => {
   assert.deepEqual(todoProgress([]), { done: 0, total: 0 });
+  assert.deepEqual(todoProgress(null), { done: 0, total: 0 });
   assert.deepEqual(
     todoProgress([
       { content: "A", status: "completed", activeForm: "A" },
