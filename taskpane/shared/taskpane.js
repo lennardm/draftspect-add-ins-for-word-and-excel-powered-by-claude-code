@@ -54,6 +54,7 @@ import {
   toolExcelSetRowHeight,
 } from "./tools-excel.js";
 import { isInOrUnder, docDirFromActiveUrl } from "./paths.js";
+import { isTodoWrite, normalizeTodos, coalesceTodos, todoProgress, todoLabel } from "./todos.js";
 
 // Daemon endpoints. The HTTP server that loaded this taskpane is on
 // HTTP_PORT; the WebSocket bridge is on WS_PORT (one less by daemon convention).
@@ -500,6 +501,57 @@ function appendToolUse(name, args) {
   assistantTurnElem = null;
 }
 
+// ---- Plan panel (TodoWrite checklist) --------------------------------------
+// The agent's TodoWrite calls drive a single checklist pinned above the
+// composer. TodoWrite always sends the whole list, so we render the latest in
+// place rather than stacking a bubble per call. The panel lives outside
+// #messages, so the "Show diagnostics" gate never hides it.
+const $planPanel = document.getElementById("plan-panel");
+const $planItems = document.getElementById("plan-items");
+const $planCount = document.getElementById("plan-count");
+const $planHeader = document.getElementById("plan-header");
+let planCollapsed = false;
+
+function renderPlanPanel(todos) {
+  if (!$planPanel) return;
+  // null (never planned) or [] (planned then emptied) → hide and clear.
+  if (!todos || todos.length === 0) {
+    $planPanel.hidden = true;
+    $planItems.innerHTML = "";
+    $planCount.textContent = "";
+    $planPanel.classList.remove("all-done");
+    return;
+  }
+  const { done, total } = todoProgress(todos);
+  $planCount.textContent = `${done}/${total}`;
+  // All complete → dim (kept visible so the final result is seen).
+  $planPanel.classList.toggle("all-done", done === total);
+  $planItems.innerHTML = "";
+  for (const t of todos) {
+    const li = document.createElement("li");
+    li.className = `plan-item ${t.status}`;
+    const glyph = document.createElement("span");
+    glyph.className = "plan-glyph";
+    glyph.textContent = t.status === "completed" ? "☑" : t.status === "in_progress" ? "◐" : "☐";
+    const label = document.createElement("span");
+    label.className = "plan-label";
+    label.textContent = todoLabel(t);
+    li.appendChild(glyph);
+    li.appendChild(label);
+    $planItems.appendChild(li);
+  }
+  $planPanel.hidden = false;
+  $planPanel.classList.toggle("collapsed", planCollapsed);
+}
+
+if ($planHeader) {
+  $planHeader.addEventListener("click", () => {
+    planCollapsed = !planCollapsed;
+    $planPanel.classList.toggle("collapsed", planCollapsed);
+    $planHeader.setAttribute("aria-expanded", String(!planCollapsed));
+  });
+}
+
 // A complete assistant bubble (replay path — full text, not streamed
 // deltas). Resets assistantTurnElem so a subsequent live delta starts a
 // fresh bubble rather than appending onto a replayed one.
@@ -521,6 +573,10 @@ function renderTranscriptReplay(events, truncated) {
   $messages.innerHTML = "";
   assistantTurnElem = null;
 
+  // Rebuild the plan panel from the latest TodoWrite in the transcript (null →
+  // hidden). TodoWrite events are shown in the panel, not as tool bubbles.
+  renderPlanPanel(coalesceTodos(events));
+
   if (truncated) {
     const t = document.createElement("div");
     t.className = "transcript-truncated";
@@ -531,6 +587,8 @@ function renderTranscriptReplay(events, truncated) {
   for (const ev of events) {
     if (ev.kind === "user") appendUserMessage(ev.text);
     else if (ev.kind === "assistant") appendAssistantMessage(ev.text);
+    else if (ev.kind === "tool" && isTodoWrite(ev.name))
+      continue; // in plan panel
     else if (ev.kind === "tool") appendToolUse(ev.name, ev.input);
   }
 
@@ -764,8 +822,14 @@ async function handleServerMessage(msg) {
 
     case "assistant_event":
       if (msg.event === "tool_use_announce") {
-        appendToolUse(msg.tool, msg.input);
-        setAgentStatus("working", statusForTool(msg.tool));
+        if (isTodoWrite(msg.tool)) {
+          // Planning tool → drive the plan panel, not a tool bubble.
+          renderPlanPanel(normalizeTodos(msg.input));
+          setAgentStatus("working", "Planning…");
+        } else {
+          appendToolUse(msg.tool, msg.input);
+          setAgentStatus("working", statusForTool(msg.tool));
+        }
       } else if (msg.event === "turn_complete") {
         setAgentStatus("idle", msg.interrupted ? "Stopped" : "Ready");
         endTurn();
