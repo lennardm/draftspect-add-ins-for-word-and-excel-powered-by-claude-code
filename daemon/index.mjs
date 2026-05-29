@@ -21,6 +21,42 @@ import { stat } from "node:fs/promises";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = resolve(__dirname, "..");
 
+// ---------------------------------------------------------------------------
+// .env loader. So a non-technical user can configure the daemon by editing a
+// plain text file (PROJECT_ROOT/.env, copied from .env.example) instead of
+// exporting shell variables. Minimal on purpose — no dependency. Lines are
+// KEY=VALUE; blank lines and lines starting with `#` are ignored; surrounding
+// single/double quotes are stripped. A real environment variable already set
+// always wins (we never clobber it), so `OPENROUTER_API_KEY=… npm run dev`
+// still overrides the file. Runs FIRST — before anything below reads
+// process.env (MATTER_FOLDER, the OpenRouter toggle, etc.).
+// ---------------------------------------------------------------------------
+function loadDotEnv() {
+  let raw;
+  try {
+    raw = readFileSync(join(PROJECT_ROOT, ".env"), "utf8");
+  } catch {
+    return; // no .env — fine, every setting it can hold is optional
+  }
+  for (const line of raw.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const eq = trimmed.indexOf("=");
+    if (eq === -1) continue;
+    const key = trimmed.slice(0, eq).trim();
+    if (!key || key in process.env) continue; // never clobber a real env var
+    let val = trimmed.slice(eq + 1).trim();
+    if (
+      (val.startsWith('"') && val.endsWith('"')) ||
+      (val.startsWith("'") && val.endsWith("'"))
+    ) {
+      val = val.slice(1, -1);
+    }
+    process.env[key] = val;
+  }
+}
+loadDotEnv();
+
 // Draftspect deliberately uses 47833/47834. Another local Office add-in
 // on this machine may bind 47823/47824, so a distinct pair avoids a port
 // clash when both run at once. Keep WS_PORT = HTTP_PORT - 1 (the taskpane
@@ -545,12 +581,57 @@ const cloudNudgeShownForKey = new Set();
 const modelByKey = new Map();
 const ALLOWED_MODELS = new Set(["haiku", "sonnet", "opus"]);
 
+// ---------------------------------------------------------------------------
+// Optional OpenRouter routing — personal dev toggle, OFF unless
+// OPENROUTER_API_KEY is set. When on, the SDK is pointed at OpenRouter's
+// native Anthropic Messages endpoint (https://openrouter.ai/api/v1/messages)
+// instead of Anthropic's own API. Lets you test against OpenRouter's routing
+// / billing locally. NOTE: this routes OFF the user's Claude subscription
+// OAuth and onto an OpenRouter key — deliberately NOT a shipped feature (see
+// CLAUDE.md auth/branding constraints). Defined above the first top-level
+// await so a bridge `hello` arriving mid-startup can't hit a TDZ.
+const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY?.trim() || null;
+const USE_OPENROUTER = !!OPENROUTER_KEY;
+
+// alias (haiku/sonnet/opus) -> OpenRouter model slug. Best-guess defaults;
+// override any of them via env to pin exact versions without a code edit.
+const OPENROUTER_MODEL_SLUGS = {
+  haiku: process.env.OPENROUTER_MODEL_HAIKU?.trim() || "anthropic/claude-haiku-4.5",
+  sonnet: process.env.OPENROUTER_MODEL_SONNET?.trim() || "anthropic/claude-sonnet-4.6",
+  opus: process.env.OPENROUTER_MODEL_OPUS?.trim() || "anthropic/claude-opus-4.7",
+};
+
+// Env injected into the SDK's spawned Claude Code process when the toggle is
+// on (merged over process.env by the SDK). ANTHROPIC_AUTH_TOKEN — not
+// ANTHROPIC_API_KEY — so the key is sent as `Authorization: Bearer`, which is
+// what OpenRouter's endpoint documents. The small/fast model Claude Code uses
+// for titles/summaries must also be an OpenRouter slug or those side calls 404.
+const OPENROUTER_ENV = USE_OPENROUTER
+  ? {
+      ANTHROPIC_BASE_URL: "https://openrouter.ai/api",
+      ANTHROPIC_AUTH_TOKEN: OPENROUTER_KEY,
+      ANTHROPIC_SMALL_FAST_MODEL: OPENROUTER_MODEL_SLUGS.haiku,
+      ANTHROPIC_DEFAULT_HAIKU_MODEL: OPENROUTER_MODEL_SLUGS.haiku,
+    }
+  : {};
+
+if (USE_OPENROUTER) {
+  console.log(
+    `[daemon] OpenRouter routing ENABLED (dev toggle) — base=https://openrouter.ai/api · ` +
+      `opus=${OPENROUTER_MODEL_SLUGS.opus} sonnet=${OPENROUTER_MODEL_SLUGS.sonnet} ` +
+      `haiku=${OPENROUTER_MODEL_SLUGS.haiku}`,
+  );
+}
+
 // The model alias to pass to query(). Draftspect always pins an explicit
 // model (cost-control UI) — never silently inherits the CLI default, which
-// can be Opus. Falls back to "sonnet" if the taskpane hasn't said yet.
+// can be Opus. Falls back to "sonnet" if the taskpane hasn't said yet. With
+// the OpenRouter toggle on, the alias is remapped to the provider's slug
+// (the bare "opus"/"sonnet"/"haiku" aliases don't resolve on OpenRouter).
 function modelArgFor(key) {
   const m = modelByKey.get(key);
-  return ALLOWED_MODELS.has(m) ? m : "sonnet";
+  const alias = ALLOWED_MODELS.has(m) ? m : "sonnet";
+  return USE_OPENROUTER ? OPENROUTER_MODEL_SLUGS[alias] : alias;
 }
 
 function sessionFor(key) {
@@ -1372,6 +1453,11 @@ async function startSessionForFolder(
         prompt: userMessageStream(key, session),
         options: {
           cwd,
+          // Personal dev toggle: when OPENROUTER_API_KEY is set, point the
+          // SDK at OpenRouter's native Anthropic Messages endpoint. Empty
+          // object otherwise (merged over process.env → no-op), so the
+          // default path is unchanged.
+          ...(USE_OPENROUTER ? { env: OPENROUTER_ENV } : {}),
           systemPrompt: {
             type: "preset",
             preset: "claude_code",
