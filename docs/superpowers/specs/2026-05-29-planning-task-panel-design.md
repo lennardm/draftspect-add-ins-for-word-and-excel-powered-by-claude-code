@@ -144,21 +144,21 @@ ceremony.
 - **Interleaving with other tools:** other tool announces still render in the
   message stream as today; only `TodoWrite` is diverted to the panel.
 
-### 6. Risk & first implementation step
+### 6. Risk & verification — RESOLVED
 
-**Verify at runtime** (step 1 of the plan) that the SDK actually emits
-`TodoWrite` tool calls under the current `claude_code` preset:
+**Verified at runtime (2026-05-29).** A probe started a `query()` mirroring the
+daemon's exact setup (`claude_code` preset, no `allowedTools`, the `.env`
+OpenRouter toggle — which is currently empty, so Claude Code OAuth) and inspected
+the `system/init` tool list:
 
-- Expected: it does, because no `allowedTools` allowlist is set (all preset tools
-  allowed) and `TodoWrite` is a base preset tool.
-- `todoFeatureEnabled` (sdk.d.ts) is a **terminal-UI display flag** (it sits among
-  `showTurnDuration` / `showMessageTimestamps`), not a tool gate — irrelevant to
-  our own render.
-- Contingency: if `TodoWrite` is not emitted, investigate the preset toolset; a
-  targeted `allowedTools` including `TodoWrite` (alongside the office tools) is a
-  fallback, but note that switching from disallow-only to an allowlist is a
-  behavior change that must preserve all currently-available tools — handle with
-  care.
+- `TodoWrite` — **present** ✅ (31 tools total; model `claude-sonnet-4-6`).
+- `Task` — **present** ✅ (bonus: confirms subagents/D2 are available later).
+- `TaskCreate` — absent (the separate newer task system; not needed for D1).
+
+So no contingency is required: `TodoWrite` is registered and the agent can call
+it without any `allowedTools` change. (`todoFeatureEnabled` in sdk.d.ts is a
+terminal-UI display flag — it sits among `showTurnDuration` /
+`showMessageTimestamps` — not a tool gate; irrelevant to our own render.)
 
 ### 7. Testing
 
