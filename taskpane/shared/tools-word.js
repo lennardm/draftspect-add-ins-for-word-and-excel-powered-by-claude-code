@@ -505,42 +505,62 @@ export async function toolReplaceParagraphs({
 //
 // Recipe R2: getTextRanges([" "], false) returns one range per word INCLUDING
 // its trailing delimiter space, so deleting a word range also removes its
-// space (no double-spacing), and replacement text re-adds a single trailing
-// space to match.
+// space (no double-spacing); a replacement re-adds a single trailing space
+// only when the span is followed by another word in the match.
 async function applyWordDiffToRange(context, matchRange, find, replace) {
   const hunks = diffHunks(find, replace);
   if (hunks.length === 0) return true; // nothing actually changed
 
-  const wordRanges = matchRange.getTextRanges([" "], false); // keep spacing
+  const wordRanges = matchRange.getTextRanges([" "], /* trimDelimiters */ false);
   wordRanges.load("items");
   await context.sync();
 
   const items = wordRanges.items;
-  // Count-guard: if Word's tokenization disagrees with ours, bail to fallback.
+  // Count-guard: if Word's word-splitting disagrees with our tokenization,
+  // bail (caller falls back to a whole-span replace). tokenize(find).length is
+  // the expected number of word-ranges; diffHunks alone doesn't expose it.
   if (items.length !== tokenize(find).length) return false;
 
-  // Apply hunks in REVERSE order so edits don't shift the indices of
-  // not-yet-applied (earlier) ranges.
+  // COMPUTE phase — resolve every range/op BEFORE issuing any write, so a bad
+  // index or expandTo can only return-false (clean fallback), never leave a
+  // half-applied edit that the caller's fallback would then stack on top of.
+  // Hunks are processed in REVERSE order so earlier (lower-index) ranges stay
+  // valid as later ones are mutated.
+  const ops = []; // { range, text, location }
   for (let h = hunks.length - 1; h >= 0; h--) {
     const { oldStart, oldCount, insertTokens } = hunks[h];
     const insText = insertTokens.join(" ");
     if (oldCount > 0) {
-      // Replace or delete a span of existing word ranges.
+      if (oldStart < 0 || oldStart + oldCount > items.length) return false;
       const span =
         oldCount === 1 ? items[oldStart] : items[oldStart].expandTo(items[oldStart + oldCount - 1]);
-      // Deleted ranges carried their trailing spaces; for a replacement,
-      // re-add a single trailing space so the following word stays separated.
-      const replacement = insertTokens.length > 0 ? insText + " " : "";
-      span.insertText(replacement, Word.InsertLocation.replace);
+      // The span's last word-range carried a trailing space only if another
+      // word follows it in the match; re-add one to match (none at match end).
+      const followedByWord = oldStart + oldCount < items.length;
+      const replacement = insertTokens.length > 0 ? insText + (followedByWord ? " " : "") : "";
+      ops.push({ range: span, text: replacement, location: Word.InsertLocation.replace });
+    } else if (oldStart < items.length) {
+      // Pure insertion before the word currently at oldStart.
+      ops.push({
+        range: items[oldStart],
+        text: insText + " ",
+        location: Word.InsertLocation.before,
+      });
+    } else if (items.length > 0) {
+      // Pure insertion appended after the last word.
+      ops.push({
+        range: items[items.length - 1],
+        text: " " + insText,
+        location: Word.InsertLocation.after,
+      });
     } else {
-      // Pure insertion before the word currently at oldStart (or at the end).
-      const text = insText + " ";
-      if (oldStart < items.length) {
-        items[oldStart].insertText(text, Word.InsertLocation.before);
-      } else {
-        items[items.length - 1].insertText(" " + insText, Word.InsertLocation.after);
-      }
+      return false; // no anchor to insert against
     }
+  }
+
+  // APPLY phase — pure queuing of writes (insertText does not sync).
+  for (const op of ops) {
+    op.range.insertText(op.text, op.location);
   }
   await context.sync();
   return true;
