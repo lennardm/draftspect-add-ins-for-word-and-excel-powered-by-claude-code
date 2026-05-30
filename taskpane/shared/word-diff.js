@@ -81,6 +81,8 @@ export function diffHunks(oldText, newText) {
       k++;
       continue;
     }
+    // Captured before the inner loop, so it indexes the OLD token array
+    // correctly regardless of delete/insert order within this hunk.
     const oldStart = oldIdx;
     let oldCount = 0;
     const insertTokens = [];

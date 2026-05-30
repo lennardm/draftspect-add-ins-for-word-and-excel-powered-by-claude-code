@@ -81,3 +81,21 @@ test("diffHunks: trailing-word change", () => {
     { oldStart: 0, oldCount: 1, insertTokens: ["housing,"] },
   ]);
 });
+
+test("wordDiff: fully different inputs → all-delete then all-insert", () => {
+  assert.deepEqual(wordDiff("a b", "x y"), [
+    { op: "delete", tokens: ["a", "b"] },
+    { op: "insert", tokens: ["x", "y"] },
+  ]);
+});
+
+test("diffHunks: empty → empty inputs → no hunks", () => {
+  assert.deepEqual(diffHunks("", ""), []);
+});
+
+test("diffHunks: insertion from empty / deletion to empty", () => {
+  assert.deepEqual(diffHunks("", "new words"), [
+    { oldStart: 0, oldCount: 0, insertTokens: ["new", "words"] },
+  ]);
+  assert.deepEqual(diffHunks("old words", ""), [{ oldStart: 0, oldCount: 2, insertTokens: [] }]);
+});
