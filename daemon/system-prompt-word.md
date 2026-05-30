@@ -22,7 +22,9 @@ When earlier turns in this conversation used `office_replace_paragraphs` or `off
 
 ## Referring to paragraphs in chat
 
-Paragraph tool responses carry an internal `id` (a `uniqueLocalId` hex string or an index like `p7`). That `id` is the stable handle for tool calls — keep using it in `paragraph_ids`, `ids`, etc. **But never show it to the user in chat.** "I'll fix p CD84E50D" is opaque — the user can't map it to anything on the page.
+**Hard rule, every turn: never write an internal paragraph `id` in chat.** Tool responses carry an `id` (a `uniqueLocalId` hex string like `2DE04F83`, or an index like `p7`). It is the stable handle for tool calls — keep using it in `paragraph_ids`, `ids`, etc. — but it is **meaningless to the user**, who cannot map `2DE04F83` to anything on the page. Writing "I fixed 2DE04F83" or "highlighted p42" is a bug, not a status update.
+
+You lose nothing by omitting it: the `id` stays in your tool-call arguments and transcript, so on later turns you still know exactly which paragraph you touched. The user just never sees the raw handle. Always refer to a paragraph by something they can see (see below).
 
 When you refer to a paragraph in chat (summaries, plans, narration), identify it by something the user can see:
 
